@@ -52,7 +52,7 @@ gets libdsm ready (below), builds, then smoke-tests the result (`smbftp -h`, and
 `smbftp -S 127.0.0.1`, which sends no packets but proves the Winsock imports
 resolve). Exit status is 0 only if everything succeeds.
 
-The download uses `curl.exe`, `tar.exe` and `certutil.exe`, which are part of
+libdsm is downloaded using `curl.exe`, `tar.exe` and `certutil.exe`, which are part of
 Windows 10 version 1803 and later and Windows 11 (without `curl.exe` the script
 falls back to PowerShell for the download). For an offline build, copy the file
 `libdsm-<commit>.tar.gz` into `deps\` first; it is used as it is, after its SHA-256
