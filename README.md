@@ -1,9 +1,9 @@
 # smbftp
 
 Lightweight Windows FTP-style command-line client utility for SMB1 file servers, for Windows. 
-The SMB1 protocol runs in userspace through the excellent [libdsm](https://github.com/videolabs/libdsm),
-so Windows does not need its SMB1 client feature enabled and the Windows SMB
-redirector is not used. Version, usage and history are in the header of `smbftp.c`.
+The SMB1 protocol runs in userspace through the excellent [libdsm](https://github.com/videolabs/libdsm).  
+The Windows SMB redirector is not used so Windows does not need SMB1 enabled.
+Version, usage and history are in the header of `smbftp.c`.
 
 ## Usage
 
@@ -14,6 +14,8 @@ redirector is not used. Version, usage and history are in the header of `smbftp.
 Default login is `guest` with an empty password (libdsm cannot send a true null
 session). Commands: `shares`, `use <share>`, `ls`, `cd`, `pwd`, `get`, `put`,
 `lcd`, `lpwd`, `help`, `quit`. Run `smbftp -h` for all options.
+
+**NOTE:** Command line Passwords are plan text - this is not a security project and was just meant as a quick hack to acces an old NAS on Windows machine without SMB1 enabled.
 
 ## Finding servers (scan mode)
 
@@ -38,7 +40,9 @@ hosts at a time.
 ## Building on Windows (TCC only)
 
 Everything is built by [TinyCC](https://github.com/phoenixthrush/Tiny-C-Compiler) (`tcc.exe`): no
-GNU tools, MinGW, WSL, meson, make, libtasn1 or iconv. The libdsm sources in
+GNU tools, MinGW, WSL, meson, make, libtasn1 or iconv. 
+TCC does not come with extensive Windows Header files so `WINPORT` contains bare minimum header files needed to compile.
+The libdsm sources in
 `libdsm\` and `smbftp.c` are compiled together and linked statically into one
 `smbftp.exe`; there is no libdsm DLL.
 
