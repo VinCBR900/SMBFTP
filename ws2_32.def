@@ -1,0 +1,21 @@
+; Import definitions for the Winsock functions smbftp and the bundled libdsm
+; call. TCC ships no ws2_32.def in some versions, so build.cmd always links this
+; one (it is harmless where TCC has its own: build.cmd does not use -lws2_32).
+LIBRARY ws2_32.dll
+EXPORTS
+closesocket
+connect
+getsockopt
+htonl
+htons
+ioctlsocket
+ntohl
+ntohs
+recv
+select
+send
+socket
+WSACleanup
+WSAGetLastError
+WSAIoctl
+WSAStartup
