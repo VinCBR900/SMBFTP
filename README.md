@@ -2,6 +2,9 @@
 
 Targeted primarily at Windows, this is a Lightweight FTP-style command-line client utility for SMB1 file servers. The SMB1 protocol runs in userspace via a modified [libdsm](https://github.com/videolabs/libdsm). The Windows SMB redirector is not used so Windows does not need SMB1 enabled. Version, usage and history are in the header of `smbftp.c`.
 
+> **AI Disclosure**: The coding heavy lifting was done by Claude AI (Anthropic).  I architected, reviewed, and shepherded Claude.
+> To be frank, without Claude this tool would not have been possible.
+
 ## Usage
 
     smbftp [options] <IPv4-address>
