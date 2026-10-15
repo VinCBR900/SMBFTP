@@ -1,7 +1,7 @@
 # smbftp
 
-FTP-style command-line client for SMB1 file servers, for Windows. The SMB1
-protocol runs in userspace through [libdsm](https://github.com/videolabs/libdsm),
+Lightweight Windows FTP-style command-line client utility for SMB1 file servers, for Windows. 
+The SMB1 protocol runs in userspace through the excellent [libdsm](https://github.com/videolabs/libdsm),
 so Windows does not need its SMB1 client feature enabled and the Windows SMB
 redirector is not used. Version, usage and history are in the header of `smbftp.c`.
 
@@ -37,7 +37,7 @@ hosts at a time.
 
 ## Building on Windows (TCC only)
 
-Everything is built by [TinyCC](https://repo.or.cz/w/tinycc.git) (`tcc.exe`): no
+Everything is built by [TinyCC](https://github.com/phoenixthrush/Tiny-C-Compiler) (`tcc.exe`): no
 GNU tools, MinGW, WSL, meson, make, libtasn1 or iconv. The libdsm sources in
 `libdsm\` and `smbftp.c` are compiled together and linked statically into one
 `smbftp.exe`; there is no libdsm DLL.
@@ -140,36 +140,6 @@ Found by testing smbftp 0.5 (see "Tests"). They explain the reported symptoms
   (`-DSMB_WIN_CODEPAGE=65001`) if your server has names outside your code page.
 * **Not changed:** `smb_fstat` (unused by smbftp, has known offset bugs), and no
   FIND_CLOSE2 is sent when a listing ends early.
-
-## Tests
-
-The tools are in `tests/` (Linux, Python 3, gcc, Samba, impacket; see the header of
-each file). They build smbftp with ASan/UBSan, run it against a Samba server
-(SMB1 only) and impacket's strict SMB1 server, and compare every listing with the
-files on disk.
-
-| Test | smbftp 0.5 | smbftp 0.6 |
-|------|------------|------------|
-| Black-box suite (285 tests: listings of 0..5000 files, long and varied names, Unicode, `cd`/`ls` repeats, transfers 0 B..10 MB), Samba, ASan | 9 failed | 0 failed |
-| same, impacket | 39 failed (a listing stops at about 500 entries; wrong counts) | 0 failed |
-| same, plain (no ASan) build | not run | 0 failed on both servers |
-| Windows branch of `smb_utils.c` on a Linux shim, plain build, `d_varlen` (600 names, 1..200 chars) | aborts: glibc "malloc(): invalid next size" | passes |
-| Windows branch, UTF-8 code page, ASan, Samba (all) and impacket (listings) | n/a | 0 failed |
-| Reply-mutation fuzz (a proxy corrupts server replies), ASan | 100 seeds: 32 sanitizer reports (heap overflows, huge allocations), 1 abort | 690 seeds (Samba, impacket, Windows branch, 30% and 80% mutation): 0 reports |
-| Replies delivered 1..500 bytes at a time, with delay | n/a | listing and download exact |
-| Connection dropped at 14 points of a listing | n/a | clean exit, partial listing flagged, no wrong or duplicate names, next run works |
-| valgrind with leak check (`use`, `ls` x3, `get`, `shares`) | n/a | no errors, no leaks |
-
-Remaining differences, none a defect in smbftp: the Windows-branch shim used for the
-ANSI code page converts to Latin-1, so four Unicode listing checks that expect UTF-8
-differ in the shim (counts are right; the UTF-8 shim build passes them). A stalled
-server ends a request after 60 s, which the fuzzer's short time limit (5-15 s) reports as "hang".
-
-Not tested: a real Windows machine and a real Windows SMB1 server (no Windows here;
-the TCC build was only syntax-checked with TCC on Linux). The reported
-"out of memory" message could not be reproduced as such; it is the likeliest
-result of the heap overflow above (a failing `malloc` after heap corruption), but
-that link is inferred, not observed.
 
 ## libdsm write patch (needed for strict servers)
 
