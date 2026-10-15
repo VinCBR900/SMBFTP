@@ -1,0 +1,29 @@
+# libdsm sources compiled into smbftp, relative to libdsm/, one per line.
+# Read by build.cmd, the Makefile and tests/build_linux.sh. Lines starting with # are comments.
+#
+# netbios_ns.c (NetBIOS name lookup, needs pthreads) and compat/clock_gettime.c (only
+# used by netbios_ns.c) are left out on purpose: smbftp connects by IPv4 address.
+# compat/strlcpy.c and compat/strndup.c are always built so Windows and Linux agree.
+contrib/mdx/md4.c
+contrib/mdx/md5.c
+contrib/rc4/rc4.c
+src/hmac_md5.c
+src/netbios_query.c
+src/netbios_session.c
+src/netbios_utils.c
+src/smb_buffer.c
+src/smb_dir.c
+src/smb_fd.c
+src/smb_file.c
+src/smb_message.c
+src/smb_ntlm.c
+src/smb_session.c
+src/smb_session_msg.c
+src/smb_share.c
+src/smb_spnego.c
+src/smb_stat.c
+src/smb_trans2.c
+src/smb_transport.c
+src/smb_utils.c
+compat/strlcpy.c
+compat/strndup.c
