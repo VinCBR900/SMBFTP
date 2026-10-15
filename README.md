@@ -1,4 +1,4 @@
-# smbftp
+# smbftp for Windows
 
 Lightweight Windows FTP-style command-line client utility for SMB1 file servers, for Windows. 
 The SMB1 protocol runs in userspace through the excellent [libdsm](https://github.com/videolabs/libdsm).  
@@ -36,8 +36,7 @@ separately. A server found only on tcp/139 needs `smbftp -t nbt <address>`.
 Hosts that drop packets show nothing. A /24 takes a few seconds; probes run 64
 hosts at a time.
 
-
-## Building on Windows (TCC only)
+## Building on Windows 
 
 Everything is built by [TinyCC](https://github.com/phoenixthrush/Tiny-C-Compiler) (`tcc.exe`): no
 GNU tools, MinGW, WSL, meson, make, libtasn1 or iconv. 
@@ -68,6 +67,9 @@ Layout, all next to `build.cmd`:
 
 `ws2_32.def` is the import definition for the Winsock functions; it is linked
 even if your TCC ships its own, so older TCC packages work too.
+
+## Building on Linux
+The code _should_ build under Linux but never tried or tested. You will have to craft your own makefile.
 
 ### What was changed in the bundled libdsm
 
