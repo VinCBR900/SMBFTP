@@ -1,9 +1,7 @@
 # smbftp for Windows
 
 Lightweight Windows FTP-style command-line client utility for SMB1 file servers, for Windows. 
-The SMB1 protocol runs in userspace through the excellent [libdsm](https://github.com/videolabs/libdsm).  
-The Windows SMB redirector is not used so Windows does not need SMB1 enabled.
-Version, usage and history are in the header of `smbftp.c`.
+The SMB1 protocol runs in userspace via a modified [libdsm](https://github.com/videolabs/libdsm). The Windows SMB redirector is not used so Windows does not need SMB1 enabled. Version, usage and history are in the header of `smbftp.c`.
 
 ## Usage
 
@@ -15,7 +13,7 @@ Default login is `guest` with an empty password (libdsm cannot send a true null
 session). Commands: `shares`, `use <share>`, `ls`, `cd`, `pwd`, `get`, `put`,
 `lcd`, `lpwd`, `help`, `quit`. Run `smbftp -h` for all options.
 
-**NOTE:** Command line Passwords are plan text - this is not a security project and was just meant as a quick hack to acces an old NAS on Windows machine without SMB1 enabled.
+**NOTE:** Command line Passwords are plan text - this is not a security project and was just meant as a quick hack to acces an old NAS on Windows machines without SMB1 enabled.
 
 ## Finding servers (scan mode)
 
@@ -43,7 +41,7 @@ GNU tools, MinGW, WSL, meson, make, libtasn1 or iconv.
 TCC does not come with extensive Windows Header files so `WINPORT` contains bare minimum header files needed to compile.
 The libdsm sources in
 `libdsm\` and `smbftp.c` are compiled together and linked statically into one
-`smbftp.exe`; there is no libdsm DLL.
+`smbftp.exe`; there is no libdsm DLL. The Libdsm files hav ebeen modified, see below.
 
     build.cmd            release build (default)
     build.cmd debug      libdsm's debug trace on stderr, asserts on, -g
@@ -102,9 +100,6 @@ The code _should_ build under Linux but never tried or tested. You will have to 
   `patch` tool to apply it.
 * **Not built:** `netbios_ns.c` (NetBIOS name lookup, needs pthreads). smbftp
   connects by IPv4 address and never calls it.
-
-`meson.build` and `config.h.meson` are left as they were and are not used (the
-meson build would still ask for libtasn1).
 
 ### libdsm fixes in 0.6 (`libdsm-v0.6-fixes.diff`, applied on top of the port above)
 
