@@ -1,10 +1,13 @@
 @echo off
 rem ============================================================================
-rem  build.cmd - build smbftp.exe on Windows with TCC (tcc.exe) only
+rem  build.cmd - build smbftp.exe (command line) and WinSMBFTP.exe (GUI) on
+rem  Windows with TCC (tcc.exe) only
+rem
+rem  Version : 2.0
 rem
 rem  No GNU tools, WSL, MinGW, meson, make, libtasn1 or iconv are needed. TCC
-rem  compiles libdsm and smbftp.c together and links them statically into one
-rem  smbftp.exe (no libdsm DLL, no import library for it).
+rem  compiles libdsm, smb_engine.c and smbftp.c (or winsmbftp.c) together and
+rem  links them statically into one exe (no libdsm DLL, no import library).
 rem
 rem  libdsm is not part of this source tree. The first build downloads the
 rem  upstream commit named in patches\libdsm.cfg, checks its SHA-256, unpacks it
@@ -12,10 +15,14 @@ rem  into .\libdsm and applies patches\*.diff with tools\applydiff.c, a small
 rem  patch tool that this script compiles with TCC. Changing patches\libdsm.cfg
 rem  or a patch file makes the next build redo this. See README.md.
 rem
-rem  Usage:   build.cmd             release build (default)
-rem           build.cmd debug       keep libdsm's debug trace and asserts, add -g
+rem  Usage:   build.cmd             release build of smbftp.exe (default)
+rem           build.cmd debug       smbftp.exe with libdsm's debug trace and asserts, -g
+rem           build.cmd gui         build WinSMBFTP.exe (the GUI frontend)
+rem           build.cmd gui debug   as gui, plus -g and -DWINSMB_DEBUG: dbg_log() writes
+rem                                 winsmbftp-debug.log next to the exe (a plain gui
+rem                                 build has no logging code at all)
 rem           build.cmd fetch       only download, verify and patch libdsm
-rem           build.cmd clean       delete smbftp.exe
+rem           build.cmd clean       delete smbftp.exe and WinSMBFTP.exe
 rem           build.cmd distclean   clean, and delete .\libdsm and the download cache .\deps
 rem
 rem  Needs:   TCC, and for the download curl.exe, tar.exe and certutil.exe, which
@@ -30,14 +37,23 @@ rem     3. a tcc folder next to this script, or ..\tcc, %SystemDrive%\tcc,
 rem        %ProgramFiles%\tcc, %ProgramFiles(x86)%\tcc, %USERPROFILE%\tcc
 rem
 rem  Expected layout, everything relative to this script:
-rem     build.cmd  smbftp.c  smbftp.h  ws2_32.def  sources.lst
-rem     winport\   support files for TCC on Windows (config.h, winmini.h, ...)
+rem     build.cmd  smbftp.c  smbftp.h  smb_engine.c  smb_engine.h  ws2_32.def  sources.lst
+rem     winsmbftp.c  user32.def  comctl32.def  comdlg32.def  WinSMBFTP.exe.manifest  (gui only)
+rem     winport\   support files for TCC on Windows (config.h, winmini.h, wingui.h, ...)
 rem     patches\   libdsm.cfg and the patch series for libdsm
 rem     tools\     applydiff.c, the patch tool
 rem     libdsm\    made by this script (do not edit; change patches\ instead)
 rem     deps\      download cache and the compiled patch tool, made by this script
 rem
-rem  Exit status: 0 = built and smoke-tested, 1 = failure, 2 = bad argument.
+rem  Exit status: 0 = built (smbftp.exe: and smoke-tested), 1 = failure, 2 = bad argument.
+rem
+rem  History : 2.0  2026-10-23  Merge of the two build.cmd lineages. From SMBFTP-main:
+rem                 libdsm is downloaded, SHA-256 checked and patched (patches\,
+rem                 tools\applydiff.c, fetch, distclean) instead of bundled. From the
+rem                 WinSMBFTP tree 1.1: gui and gui debug (WINSMB_DEBUG), smb_engine.c
+rem                 in both exes, clean removes both exes.
+rem            1.1  2026-10-22  (WinSMBFTP tree) gui debug; clean removes both exes.
+rem            1.0  earlier builds: release, debug, gui, clean (no version was kept).
 rem ============================================================================
 setlocal EnableExtensions EnableDelayedExpansion
 
@@ -50,17 +66,23 @@ if errorlevel 1 (
 set "OUT=smbftp.exe"
 set "MODE=release"
 set "ACTION=build"
+set "GUIDBG=0"
 
 if /i "%~1"=="clean"     goto :clean
 if /i "%~1"=="distclean" goto :distclean
 if /i "%~1"=="fetch"     set "ACTION=fetch"  & goto :modeok
 if /i "%~1"=="debug"     set "MODE=debug"    & goto :modeok
 if /i "%~1"=="release"   set "MODE=release"  & goto :modeok
+if /i "%~1"=="gui"       set "MODE=gui" & set "OUT=WinSMBFTP.exe" & goto :modeok
 if /i "%~1"=="help"      goto :usage
 if /i "%~1"=="-h"        goto :usage
 if /i "%~1"=="/?"        goto :usage
 if not "%~1"==""         goto :badarg
 :modeok
+if "%~2"=="" goto :argok
+if /i "%MODE%"=="gui" if /i "%~2"=="debug" set "GUIDBG=1" & goto :argok
+goto :badarg
+:argok
 
 rem ---- locate TCC ------------------------------------------------------------
 if defined TCC (
@@ -102,11 +124,15 @@ if /i "%ACTION%"=="fetch" (
 
 rem ---- check the source tree -------------------------------------------------
 set "MISSING="
-set "NEED=smbftp.c smbftp.h ws2_32.def sources.lst"
+set "NEED=smbftp.c smbftp.h smb_engine.c smb_engine.h ws2_32.def sources.lst"
 set "NEED=%NEED% winport\winmini.h winport\config.h winport\winsock2.h"
 set "NEED=%NEED% winport\ws2tcpip.h winport\unistd.h"
 set "NEED=%NEED% libdsm\include\bdsm.h libdsm\include\bdsm\smb_session.h"
-for %%F in (%NEED%) do call :need "%%~F"
+if /i "%MODE%"=="gui" (
+    set "NEED=!NEED! winsmbftp.c WinSMBFTP.exe.manifest"
+    set "NEED=!NEED! user32.def comctl32.def comdlg32.def winport\wingui.h"
+)
+for %%F in (!NEED!) do call :need "%%~F"
 
 rem ---- libdsm sources: the list is in sources.lst, shared with the Makefile ---
 set "SRCS="
@@ -125,6 +151,10 @@ if /i "%MODE%"=="debug" (
 ) else (
     set "FLAGS=-DHAVE_CONFIG_H=1 -DNDEBUG"
 )
+rem  gui debug: -g and WINSMB_DEBUG (winsmbftp.c's dbg_log). NDEBUG stays: a GUI
+rem  exe has no console, so libdsm's stderr trace and assert messages would not
+rem  be seen anyway - the debug log file is the diagnostic there.
+if "%GUIDBG%"=="1" set "FLAGS=-g -DHAVE_CONFIG_H=1 -DNDEBUG -DWINSMB_DEBUG"
 
 if exist "%OUT%" del /q "%OUT%" 2>nul
 if exist "%OUT%" (
@@ -133,14 +163,30 @@ if exist "%OUT%" (
 )
 
 echo [build] mode     : %MODE%
-echo [build] compiling smbftp.c + libdsm into %OUT% ...
-"!TCC!" !FLAGS! !INCS! -o "%OUT%" smbftp.c !SRCS! ws2_32.def
+if "%GUIDBG%"=="1" echo [build] WINSMB_DEBUG on: %OUT% will write winsmbftp-debug.log next to itself
+if /i "%MODE%"=="gui" (
+    echo [build] compiling winsmbftp.c + smb_engine.c + libdsm into %OUT% ...
+    "!TCC!" !FLAGS! !INCS! -o "%OUT%" winsmbftp.c smb_engine.c !SRCS! ws2_32.def user32.def comctl32.def comdlg32.def
+) else (
+    echo [build] compiling smbftp.c + smb_engine.c + libdsm into %OUT% ...
+    "!TCC!" !FLAGS! !INCS! -o "%OUT%" smbftp.c smb_engine.c !SRCS! ws2_32.def
+)
 if errorlevel 1 goto :compile_failed
 if not exist "%OUT%" goto :compile_failed
 
 for %%A in ("%OUT%") do echo [build] built    : %%~fA ^(%%~zA bytes^)
 
-rem ---- smoke test ------------------------------------------------------------
+if /i "%MODE%"=="gui" (
+    echo [build] no automated smoke test for a GUI exe - run %OUT% and check that
+    echo [build] a window opens, resizes cleanly, and closes.
+    echo [build] WinSMBFTP.exe.manifest must stay next to %OUT% for the themed look.
+    echo [build] Scan: click Scan, check the range, press Scan in its window.
+    popd
+    endlocal
+    exit /b 0
+)
+
+rem ---- smoke test (smbftp.exe only) ---------------------------------------
 rem  -h checks that the program starts. "-S 127.0.0.1" scans only this machine's
 rem  own address, which is never probed, so no packets are sent, but it does call
 rem  WSAStartup, WSAIoctl and socket, which proves the Winsock imports resolved.
@@ -166,27 +212,31 @@ echo [build] BUILD FAILED: TCC reported errors above
 goto :fail
 
 :clean
-if exist "%OUT%" del /q "%OUT%"
-echo [build] removed %OUT%
+if exist "smbftp.exe" del /q "smbftp.exe"
+if exist "WinSMBFTP.exe" del /q "WinSMBFTP.exe"
+echo [build] removed smbftp.exe and WinSMBFTP.exe ^(where present^)
 popd
 endlocal
 exit /b 0
 
 :distclean
-if exist "%OUT%" del /q "%OUT%"
+if exist "smbftp.exe" del /q "smbftp.exe"
+if exist "WinSMBFTP.exe" del /q "WinSMBFTP.exe"
 if exist libdsm rmdir /s /q libdsm
 if exist deps rmdir /s /q deps
-echo [build] removed %OUT%, .\libdsm and .\deps
+echo [build] removed smbftp.exe, WinSMBFTP.exe, .\libdsm and .\deps
 popd
 endlocal
 exit /b 0
 
 :usage
-echo Usage: build.cmd [release ^| debug ^| fetch ^| clean ^| distclean]
+echo Usage: build.cmd [release ^| debug ^| gui [debug] ^| fetch ^| clean ^| distclean]
 echo   release    build smbftp.exe (default)
-echo   debug      build with libdsm's debug trace on stderr, asserts enabled, and -g
+echo   debug      build smbftp.exe with libdsm's debug trace on stderr, asserts enabled, and -g
+echo   gui        build WinSMBFTP.exe
+echo   gui debug  build WinSMBFTP.exe with -g and winsmbftp-debug.log logging
 echo   fetch      only download, verify and patch libdsm into .\libdsm
-echo   clean      delete smbftp.exe
+echo   clean      delete smbftp.exe and WinSMBFTP.exe
 echo   distclean  clean, and delete .\libdsm and the download cache .\deps
 echo The TCC compiler is found via the TCC environment variable, then PATH, then
 echo a few usual folders; see the comments at the top of this file.
@@ -195,8 +245,8 @@ endlocal
 exit /b 0
 
 :badarg
-echo [build] unknown argument "%~1"
-echo Usage: build.cmd [release ^| debug ^| fetch ^| clean ^| distclean]
+echo [build] unknown argument "%~1 %~2"
+echo Usage: build.cmd [release ^| debug ^| gui [debug] ^| fetch ^| clean ^| distclean]
 popd
 endlocal
 exit /b 2

@@ -1,0 +1,26 @@
+; Import definitions for the user32 functions winsmbftp.c (WinSMBFTP.exe)
+; calls - window class/creation, the message loop, and basic dialogs. Same
+; format and reasoning as ws2_32.def; see winport\wingui.h for the declarations.
+LIBRARY user32.dll
+EXPORTS
+CreateWindowExA
+DefWindowProcA
+DestroyWindow
+DispatchMessageA
+EnableWindow
+GetClientRect
+GetMessageA
+GetWindowTextA
+LoadCursorA
+LoadIconA
+MessageBoxA
+MoveWindow
+PostMessageA
+PostQuitMessage
+RegisterClassExA
+SendMessageA
+SetForegroundWindow
+SetWindowTextA
+ShowWindow
+TranslateMessage
+UpdateWindow

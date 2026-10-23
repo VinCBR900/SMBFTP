@@ -2,7 +2,7 @@
 #
 # Windows does not use this file: it builds with build.cmd and TCC only.
 #
-# Version : 1.0
+# Version : 1.1
 # Usage   : make                release build -> ./smbftp
 #           make DEBUG=1        -g -O0, libdsm's debug trace and asserts left on
 #           make asan           AddressSanitizer + UBSan build -> ./smbftp-asan
@@ -20,7 +20,12 @@
 # in sources.lst. Changing the config or a patch re-creates ./libdsm automatically.
 # An already downloaded deps/libdsm-<commit>.tar.gz is used as it is (offline builds).
 #
-# History : 1.0  first version.
+# History : 1.1  2026-10-23  also builds smb_engine.c (the code that talks to libdsm,
+#                shared with WinSMBFTP.exe, which is Windows-only and built by
+#                build.cmd gui, not by this Makefile). "make test" runs
+#                tests/test_applydiff.sh through bash, so it works even when a
+#                zip has dropped the scripts' executable bit.
+#           1.0  first version.
 
 include patches/libdsm.cfg
 
@@ -62,12 +67,16 @@ CPPALL   = -DHAVE_CONFIG_H=1 $(DEFS) $(INCS) $(CPPFLAGS)
 
 all: $(OUT)
 
-$(OUT): $(BUILD)/smbftp.o $(OBJS_DSM)
+$(OUT): $(BUILD)/smbftp.o $(BUILD)/smb_engine.o $(OBJS_DSM)
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
-$(BUILD)/smbftp.o: smbftp.c smbftp.h linux/config.h $(STAMP)
+$(BUILD)/smbftp.o: smbftp.c smbftp.h smb_engine.h linux/config.h $(STAMP)
 	@mkdir -p $(@D)
 	$(CC) $(CFLAGS) $(CPPALL) -c -o $@ smbftp.c
+
+$(BUILD)/smb_engine.o: smb_engine.c smb_engine.h smbftp.h linux/config.h $(STAMP)
+	@mkdir -p $(@D)
+	$(CC) $(CFLAGS) $(CPPALL) -c -o $@ smb_engine.c
 
 # libdsm objects: ./libdsm only changes when $(STAMP) is rewritten, so that is the dependency.
 # (libdsm's own warnings are not ours to fix: -w)
@@ -119,7 +128,7 @@ $(STAMP): patches/libdsm.cfg $(PATCHES) $(APPLYDIFF)
 	echo "$(LIBDSM_COMMIT) $(LIBDSM_PATCHES)" > $(STAMP)
 
 test: $(OUT)
-	CC="$(CC)" tests/test_applydiff.sh
+	CC="$(CC)" bash tests/test_applydiff.sh
 	./$(OUT) -h >/dev/null 2>&1
 	./$(OUT) -S 127.0.0.1 >/dev/null 2>&1
 	@echo "smoke test passed (the server test matrix is tests/run_all.sh)"

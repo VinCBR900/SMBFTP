@@ -1,0 +1,6 @@
+; Import definitions for the comctl32 (Common Controls) functions
+; winsmbftp.c (WinSMBFTP.exe) calls. Same format and reasoning as
+; ws2_32.def; see winport\wingui.h for the declarations.
+LIBRARY comctl32.dll
+EXPORTS
+InitCommonControlsEx

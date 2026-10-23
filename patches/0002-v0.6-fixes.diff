@@ -10,6 +10,10 @@ and other smaller fixes.
 
 See README.md, "What the libdsm patches change".
 
+Fix 2026-10-23 (merge into the WinSMBFTP tree): smb_share.c no longer calls
+strdup() for the "?" placeholder share name - TCC's Windows string.h/runtime may
+not provide it - and uses malloc() plus two stores instead.
+
 diff --git a/contrib/mdx/md4.c b/contrib/mdx/md4.c
 index f153ea3..5630c07 100644
 --- a/contrib/mdx/md4.c
@@ -430,7 +434,7 @@ index edf60f6..763de85 100644
      share = calloc(1, sizeof(smb_share));
      if (!share)
          return DSM_ERROR_GENERIC;
-@@ -191,58 +202,102 @@ int           smb_tree_disconnect(smb_session *s, smb_tid tid)
+@@ -191,58 +202,110 @@ int           smb_tree_disconnect(smb_session *s, smb_tid tid)
      return DSM_SUCCESS;
  }
  
@@ -526,7 +530,15 @@ index edf60f6..763de85 100644
 -        smb_from_utf16((const char *)data, name_len * 2, (*list) + i);
 +        if (name_len == 0 ||
 +            smb_from_utf16((const char *)data, name_len * 2, (*list) + n) == 0)
-+            (*list)[n] = strdup("?");
++        {
++            // placeholder; malloc, not strdup: TCC's Windows string.h may not declare it
++            (*list)[n] = (char *)malloc(2);
++            if ((*list)[n] != NULL)
++            {
++                (*list)[n][0] = '?';
++                (*list)[n][1] = '\0';
++            }
++        }
 +        if ((*list)[n] == NULL)
 +            break;
 +        n++;
@@ -559,7 +571,7 @@ index edf60f6..763de85 100644
  }
  
  size_t          smb_share_list_count(smb_share_list list)
-@@ -366,14 +421,14 @@ int             smb_share_get_list(smb_session *s, smb_share_list *list, size_t
+@@ -366,14 +429,14 @@ int             smb_share_get_list(smb_session *s, smb_share_list *list, size_t
  
      // Is the server throwing pile of shit back at me ?
      res = smb_session_recv_msg(s, &resp);
@@ -576,7 +588,7 @@ index edf60f6..763de85 100644
      {
          BDSM_dbg("Bind call failed: 0x%hhx (reason = 0x%hhx)\n",
                   resp.packet->payload[68], resp.packet->payload[70]);
-@@ -464,20 +519,13 @@ int             smb_share_get_list(smb_session *s, smb_share_list *list, size_t
+@@ -464,20 +527,13 @@ int             smb_share_get_list(smb_session *s, smb_share_list *list, size_t
  
      // Is the server throwing pile of shit back at me ?
      res = smb_session_recv_msg(s, &resp);

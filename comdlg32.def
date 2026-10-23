@@ -1,0 +1,8 @@
+; Import definitions for the comdlg32 functions winsmbftp.c (WinSMBFTP.exe)
+; calls - the Open/Save common file dialogs used by Get and Put. Same
+; format and reasoning as ws2_32.def; see winport\wingui.h for the
+; declarations.
+LIBRARY comdlg32.dll
+EXPORTS
+GetOpenFileNameA
+GetSaveFileNameA

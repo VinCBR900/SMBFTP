@@ -1,10 +1,17 @@
 /*
- * smbftp.h - shared definitions for smbftp.c
+ * smbftp.h - shared definitions for smbftp.c, smb_engine.c and winsmbftp.c
  *
- * Version : 0.6 (kept in step with smbftp.c; SMBFTP_VERSION below is the one
+ * Version : 0.8 (kept in step with smbftp.c; SMBFTP_VERSION below is the one
  *           that is printed)
- * Usage   : not run directly; included by smbftp.c. Build: see README.md.
- * History : 0.6  2026-10-14  version bump only (fixes are in smbftp.c and libdsm).
+ * Usage   : not run directly; included by smbftp.c, smb_engine.c and
+ *           winsmbftp.c. Build: see README.md.
+ * History : 0.8  2026-10-23  version bump with smbftp.c 0.8 (graceful exit).
+ *           0.7  2026-10-23  version bump with smbftp.c 0.7 (SMBFTP-main
+ *                            merge); this file gained its version header,
+ *                            taken from SMBFTP-main's smbftp.h.
+ *           0.6  2026-10-13  Scan types (LocalAddr, ScanNet, IfInfo) and the
+ *                            engine's shared declarations live here. SMBFTP-
+ *                            main's 0.6 bumped only the version.
  *           0.5  2026-10-12  scan-mode (-S) types and constants.
  *           0.1-0.4          constants, Ctx and NtText split out of smbftp.c.
  *
@@ -14,8 +21,8 @@
  *
  * Windows with TCC: winport/winmini.h declares the few Win32/Winsock names
  * needed instead of the Windows SDK headers (TCC does not ship a complete set).
- * The same file serves the bundled libdsm sources (see build.cmd), so these
- * declarations exist in exactly one place.
+ * The same file serves the downloaded and patched libdsm sources (see build.cmd and
+ * the Makefile), so these declarations exist in exactly one place.
  */
 #ifndef SMBFTP_H
 #define SMBFTP_H
@@ -65,7 +72,7 @@ typedef socklen_t sock_len_t;
 #include <bdsm/smb_file.h>
 #include <bdsm/smb_defs.h>
 
-#define SMBFTP_VERSION  "0.6"
+#define SMBFTP_VERSION  "0.8"
 
 #define PATH_LEN        1024        /* remote and local path buffers          */
 #define LINE_LEN        2048        /* command line buffer                    */

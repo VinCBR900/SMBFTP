@@ -1,7 +1,7 @@
 /*
  * smbftp - minimal FTP-style command-line client for SMB1 file servers
  *
- * Version : 0.6
+ * Version : 0.8
  * Author  : VinCBR900
  *
  * Purpose
@@ -58,13 +58,15 @@
  *   Names containing spaces must be enclosed in double quotes.
  *
  * Build (see README.md)
- *   build.cmd                          Windows, TCC only: builds the bundled libdsm
- *                                      and smbftp.c into one smbftp.exe (no GNU
- *                                      tools, no WSL, no meson, no libtasn1)
- *   gcc -O2 -Wall -o smbftp smbftp.c -ldsm     Linux, against the system libdsm
- *   gcc -O2 -Wall -o smbftp.exe smbftp.c -ldsm -lws2_32   MinGW-w64 against a
- *                                      separately built libdsm
- *   smbftp.c needs smbftp.h (and, on Windows, winport/winmini.h) beside it.
+ *   build.cmd                          Windows, TCC only: downloads, checks and
+ *                                      patches libdsm (patches/), then builds it
+ *                                      with smbftp.c and smb_engine.c into one
+ *                                      smbftp.exe (no GNU tools, no WSL, no
+ *                                      meson, no libtasn1)
+ *   make                               Linux: the same download-and-patch, then
+ *                                      the system C compiler -> ./smbftp
+ *   smbftp.c needs smbftp.h and smb_engine.c/h (and, on Windows,
+ *   winport/winmini.h) beside it, and the patched libdsm in ./libdsm.
  *
  * Exit status: 0 = clean exit, 1 = connect/login/runtime failure, 2 = usage.
  *
@@ -78,13 +80,14 @@
  *     Lenient servers (Samba, Windows) ignore it; strict ones (impacket's
  *     SMB1 server) drop the last byte of every write and acknowledge it
  *     anyway. put re-reads the remote size and reports an error on a
- *     mismatch, leaving the truncated file behind. Fix: apply
- *     libdsm-write-bytecount.patch to libdsm (see README.md). The
- *     libdsm copy bundled for build.cmd already has this fix applied.
- *   - 0.6 needs the bundled libdsm (it adds smb_session_get_find_flags and
- *     many reply-validation fixes). Built against a stock system libdsm it
- *     still compiles but lacks the "listing may be incomplete" warning and the
- *     fixes, so large or odd directories can list partially or crash.
+ *     mismatch, leaving the truncated file behind. The fix is part of
+ *     patches/0001-tcc-windows-port.diff, which build.cmd and the Makefile
+ *     apply to the libdsm they download (see README.md).
+ *   - 0.6 and later need the patched libdsm (patches/0002-v0.6-fixes.diff adds
+ *     smb_session_get_find_flags and many reply-validation fixes). Built
+ *     against a stock system libdsm it still compiles but lacks the "listing
+ *     may be incomplete" warning and the fixes, so large or odd directories
+ *     can list partially or crash.
  *   - Names that the local code page cannot represent are shown with '?'
  *     (ANSI Windows build) and cannot be fetched by that shown name.
  *   - If a server stops answering for 60 s mid-transfer or mid-listing the
@@ -106,40 +109,33 @@
  *     names may display or transfer incorrectly. A character the local code
  *     page cannot show is listed as '?' and such a file cannot be fetched by
  *     the name shown.
- *   - A listing is not closed with FIND_CLOSE2 when it ends early (server-side
- *     search handle stays until the session ends); a stalled server ends a
- *     request after 60 s (SMB_IO_TIMEOUT_SEC in libdsm).
  *
  * History
- *   0.6  2026-10-14  Fixes for "crashes after use + ls", "only some files shown"
- *                    and "out of memory", found with an ASan build against Samba
- *                    and impacket SMB1 servers and a reply-mutating proxy (test
- *                    tools: smbftp_test/). Library (libdsm-v0.6-fixes.diff):
- *                    (1) Windows smb_from_utf16/smb_to_utf16 returned a buffer of
- *                    exactly the converted length and smb_trans2.c then wrote the
- *                    terminating NUL one byte past it: a one-byte heap overflow
- *                    per directory entry, corrupting the heap on some name lengths
- *                    (crash, entries missing, and probably a failing malloc
- *                    shown as "out of memory" - that last link is inferred, not
- *                    observed); buffers now carry a terminator. (2) TRANS2 find
- *                    replies are validated (status, word count, offsets, counts)
- *                    and reassembled by displacement; entries are bounds-checked;
- *                    an undecodable name no longer ends the listing; impacket's
- *                    FIND_NEXT entry spacing is recovered; a FIND_NEXT failure keeps
- *                    the entries already read; FIND_NEXT sends the last file name.
- *                    (3) iconv build uses UTF-16LE (emoji names broke the list).
- *                    (4) smb_session_file_remove compared the wrong id; nt_status
- *                    is set from every reply; the receive buffer size was off by 4
- *                    and a failed realloc left a NULL buffer; sends handle partial
- *                    writes; 60 s I/O timeout. (5) share-list reply parsing is
- *                    bounds-checked; smb_fread/smb_fwrite reject a server that
- *                    returns or acknowledges more than was asked; names longer than
- *                    15 characters are refused at connect (fixed-size field). A
- *                    character the local code page cannot show becomes '?'.
- *                    smbftp: ls now says when a listing may be incomplete or was
- *                    recovered. Verified: 285 black-box tests x 2 servers x 3
- *                    builds, 690 mutated-reply sessions, chunked/dropped
- *                    connections, valgrind (see README, "Tests").
+ *   0.8  2026-10-23  Leaves cleanly: quit, end of input and a failed login now
+ *                    end with eng_disconnect() (SMB logoff, then close the
+ *                    connection) instead of just closing the connection.
+ *   0.7  2026-10-23  Merged with the SMBFTP-main 0.6 lineage (same libdsm
+ *                    hardening, found with an ASan build against Samba and
+ *                    impacket SMB1 servers): libdsm is no longer bundled but
+ *                    downloaded, SHA-256 checked and patched by build.cmd and
+ *                    the Makefile (patches/). ls now says when a listing may be
+ *                    incomplete ("Warning: ...") or was recovered ("Note: ...")
+ *                    via eng_find_flags(), and reports a listing libdsm flagged
+ *                    incomplete as an error. Wording of those messages is the
+ *                    SMBFTP-main 0.6 wording; this file's own code is otherwise
+ *                    the 0.6 engine-split version.
+ *   0.6  2026-10-13  No functional change. Split everything that talks to
+ *                    libdsm (session connect/login, shares, ls, cd, get, put,
+ *                    plus the string/path/error-text utilities they use) out
+ *                    into smb_engine.c/h, so a future GUI frontend
+ *                    (WinSMBFTP.exe, winsmbftp.c) can share it instead of
+ *                    reimplementing it. The cmd_* functions here are now thin
+ *                    wrappers: call the engine, print the result - wording
+ *                    unchanged. Checked by scripting both versions through an
+ *                    impacket SMB1 test server and diffing the transcripts
+ *                    and transferred file hashes; see archive/REGRESSION.md.
+ *                    (2026-10-22: this header's Version line still said 0.5;
+ *                    corrected to 0.6. No code change.)
  *   0.5  2026-10-12  Added -S scan mode and -w: finds SMB1 servers on the
  *                    local subnet(s) without a mask argument (adapter address
  *                    and mask via Winsock WSAIoctl SIO_GET_INTERFACE_LIST on
@@ -182,140 +178,13 @@
  *                    shares.
  */
 
-#include "smbftp.h"
-
-static const NtText nt_texts[] = {
-    { NT_STATUS_ACCESS_DENIED,          "access denied" },
-    { NT_STATUS_LOGON_FAILURE,          "logon failure (bad user, password or domain)" },
-    { NT_STATUS_ACCOUNT_RESTRICTION_X,  "account restriction (guest/anonymous login not allowed?)" },
-    { NT_STATUS_ACCOUNT_DISABLED_X,     "account disabled" },
-    { NT_STATUS_BAD_NETWORK_NAME_X,     "share not found" },
-    { NT_STATUS_OBJECT_NAME_NOT_FOUND,  "file or directory not found" },
-    { NT_STATUS_OBJECT_PATH_NOT_FOUND,  "path not found" },
-    { NT_STATUS_NO_SUCH_FILE,           "no such file" },
-    { NT_STATUS_OBJECT_NAME_COLLISION,  "name already exists" },
-    { NT_STATUS_FILE_IS_A_DIRECTORY,    "is a directory" },
-    { NT_STATUS_MEDIA_WRITE_PROTECTED,  "media is write protected" },
-    { NT_STATUS_DELETE_PENDING,         "delete pending" },
-    { NT_STATUS_TOO_MANY_OPENED_FILES,  "too many open files on server" },
-    { NT_STATUS_INSUFF_SERVER_RESOURCES,"insufficient server resources" },
-    { NT_STATUS_NOT_IMPLEMENTED,        "not implemented by server" },
-    { 0, NULL }
-};
+#include "smb_engine.h"
 
 /* ------------------------------------------------------------------------ */
 /* Small utilities                                                          */
 /* ------------------------------------------------------------------------ */
-
-/*
- * str_copy - bounded string copy that reports truncation
- * Inputs : dst/dsz = destination buffer and its size, src = NUL-terminated
- * Outputs: 0 on success, -1 if src did not fit (dst is then left empty)
- * Clobbers: dst
- */
-static int str_copy(char *dst, size_t dsz, const char *src)
-{
-    size_t n = strlen(src);
-
-    if (n >= dsz) {
-        if (dsz > 0)
-            dst[0] = '\0';
-        return -1;
-    }
-    memcpy(dst, src, n + 1);
-    return 0;
-}
-
-/*
- * ci_cmp - case-insensitive (ASCII) string compare
- * Inputs : a, b = NUL-terminated strings (NULL is treated as "")
- * Outputs: <0, 0, >0 as strcmp
- * Clobbers: none
- */
-static int ci_cmp(const char *a, const char *b)
-{
-    int ca, cb;
-
-    if (a == NULL) a = "";
-    if (b == NULL) b = "";
-    for (;;) {
-        ca = (unsigned char)*a++;
-        cb = (unsigned char)*b++;
-        if (ca >= 'A' && ca <= 'Z') ca += 'a' - 'A';
-        if (cb >= 'A' && cb <= 'Z') cb += 'a' - 'A';
-        if (ca != cb)
-            return ca - cb;
-        if (ca == 0)
-            return 0;
-    }
-}
-
-/*
- * u64_str - format an unsigned 64-bit value in decimal (avoids printf %llu,
- *           which older Windows C runtimes do not support)
- * Inputs : buf = at least 21 bytes, v = value
- * Outputs: buf (also returned)
- * Clobbers: buf
- */
-static char *u64_str(char *buf, uint64_t v)
-{
-    char tmp[24];
-    int n = 0, i = 0;
-
-    do {
-        tmp[n++] = (char)('0' + (int)(v % 10));
-        v /= 10;
-    } while (v != 0);
-    while (n > 0)
-        buf[i++] = tmp[--n];
-    buf[i] = '\0';
-    return buf;
-}
-
-/*
- * ft_str - format an SMB FILETIME (100 ns ticks since 1601-01-01 UTC) as a
- *          local "YYYY-MM-DD HH:MM" string; blank if zero or out of range
- * Inputs : ft = FILETIME value, buf = at least 17 bytes
- * Outputs: buf (also returned)
- * Clobbers: buf
- */
-static char *ft_str(uint64_t ft, char *buf)
-{
-    uint64_t secs;
-    time_t t;
-    struct tm *tmv;
-
-    strcpy(buf, "                ");
-    if (ft == 0)
-        return buf;
-    secs = ft / 10000000ULL;
-    if (secs < 11644473600ULL)
-        return buf;
-    secs -= 11644473600ULL;
-    t = (time_t)secs;
-    tmv = localtime(&t);
-    if (tmv == NULL)
-        return buf;
-    if (strftime(buf, 17, "%Y-%m-%d %H:%M", tmv) == 0)
-        strcpy(buf, "                ");
-    return buf;
-}
-
-/*
- * base_name - last component of a path using / or \ as separators
- * Inputs : path = NUL-terminated string
- * Outputs: pointer into path (empty string if path ends in a separator)
- * Clobbers: none
- */
-static const char *base_name(const char *path)
-{
-    const char *p, *b = path;
-
-    for (p = path; *p; p++)
-        if (*p == '\\' || *p == '/')
-            b = p + 1;
-    return b;
-}
+/* str_copy, ci_cmp, u64_str, ft_str, base_name moved to smb_engine.c; this  */
+/* file uses them as declared in smb_engine.h.                              */
 
 /*
  * tokenize - split a command line in place into arguments; double quotes group
@@ -354,208 +223,8 @@ static int tokenize(char *line, char **argv, int max)
     return argc;
 }
 
-/*
- * parse_ipv4 - strict dotted-quad parser (no short forms, no hex/octal)
- * Inputs : text = e.g. "192.168.4.20"
- * Outputs: 1 and *ip_net (network byte order) on success, 0 if invalid
- * Clobbers: *ip_net only on success
- */
-static int parse_ipv4(const char *text, uint32_t *ip_net)
-{
-    unsigned long part[4], v;
-    const char *p = text;
-    int i, digits;
-
-    for (i = 0; i < 4; i++) {
-        v = 0;
-        digits = 0;
-        while (*p >= '0' && *p <= '9') {
-            v = v * 10 + (unsigned long)(*p - '0');
-            if (++digits > 3 || v > 255)
-                return 0;
-            p++;
-        }
-        if (digits == 0)
-            return 0;
-        part[i] = v;
-        if (i < 3) {
-            if (*p != '.')
-                return 0;
-            p++;
-        }
-    }
-    if (*p != '\0')
-        return 0;
-    *ip_net = htonl((uint32_t)((part[0] << 24) | (part[1] << 16) |
-                               (part[2] << 8) | part[3]));
-    return 1;
-}
-
-/* ------------------------------------------------------------------------ */
-/* Error reporting                                                          */
-/* ------------------------------------------------------------------------ */
-
-/*
- * nt_text - friendly text for an NT status code
- * Inputs : st = NT status
- * Outputs: static string (generic text if the code is not in the table)
- * Clobbers: none
- */
-static const char *nt_text(uint32_t st)
-{
-    int i;
-
-    for (i = 0; nt_texts[i].text != NULL; i++)
-        if (nt_texts[i].code == st)
-            return nt_texts[i].text;
-    return "server returned an error";
-}
-
-/*
- * report_rc - print an error for a libdsm int return code
- * Inputs : what = description of the failed operation, rc = DSM_* code,
- *          s = session (for the NT status)
- * Outputs: message on stderr
- * Clobbers: stderr
- */
-static void report_rc(const char *what, int rc, smb_session *s)
-{
-    uint32_t st;
-
-    switch (rc) {
-    case DSM_ERROR_NT:
-        st = smb_session_get_nt_status(s);
-        fprintf(stderr, "Error: %s: %s (NT status 0x%08lX)\n", what,
-                nt_text(st), (unsigned long)st);
-        break;
-    case DSM_ERROR_NETWORK:
-        fprintf(stderr, "Error: %s: network error or unexpected server reply\n", what);
-        break;
-    case DSM_ERROR_CHARSET:
-        fprintf(stderr, "Error: %s: character set conversion failed\n", what);
-        break;
-    default:
-        fprintf(stderr, "Error: %s: failed (code %d)\n", what, rc);
-        break;
-    }
-}
-
-/*
- * report_fail - print an error for a libdsm call that returns NULL or -1 and
- *               gives no code; shows the session's last NT status if set
- * Inputs : what = description, s = session
- * Outputs: message on stderr
- * Clobbers: stderr
- */
-static void report_fail(const char *what, smb_session *s)
-{
-    uint32_t st = smb_session_get_nt_status(s);
-
-    if (st != 0)
-        fprintf(stderr, "Error: %s: %s (NT status 0x%08lX)\n", what,
-                nt_text(st), (unsigned long)st);
-    else
-        fprintf(stderr, "Error: %s\n", what);
-}
-
-/* ------------------------------------------------------------------------ */
-/* Remote path handling                                                     */
-/* ------------------------------------------------------------------------ */
-
-/*
- * resolve_path - turn a user-typed path into a canonical share-relative path
- * Inputs : c = context (uses c->cwd), arg = path typed by the user, / or \
- *          separators, relative to cwd unless it starts with a separator;
- *          . and .. are processed (.. at the root stays at the root)
- *          out/outsz = result buffer
- * Outputs: 0 on success, -1 if too long. out is "" for the share root,
- *          otherwise "\dir\name" with a leading backslash, no trailing one
- * Clobbers: out
- */
-static int resolve_path(const Ctx *c, const char *arg, char *out, size_t outsz)
-{
-    char tmp[PATH_LEN];
-    char comp[PATH_LEN];
-    size_t len = 0, clen;
-    const char *p = arg;
-    char *slash;
-
-    tmp[0] = '\0';
-    if (*p != '\\' && *p != '/') {
-        if (str_copy(tmp, sizeof tmp, c->cwd) != 0)
-            return -1;
-        len = strlen(tmp);
-    }
-    while (*p) {
-        while (*p == '\\' || *p == '/')
-            p++;
-        if (*p == '\0')
-            break;
-        clen = 0;
-        while (*p && *p != '\\' && *p != '/') {
-            if (clen + 1 >= sizeof comp)
-                return -1;
-            comp[clen++] = *p++;
-        }
-        comp[clen] = '\0';
-        if (strcmp(comp, ".") == 0)
-            continue;
-        if (strcmp(comp, "..") == 0) {
-            slash = strrchr(tmp, '\\');
-            if (slash != NULL) {
-                *slash = '\0';
-                len = (size_t)(slash - tmp);
-            }
-            continue;
-        }
-        if (len + 1 + clen + 1 > sizeof tmp)
-            return -1;
-        tmp[len++] = '\\';
-        memcpy(tmp + len, comp, clen + 1);
-        len += clen;
-    }
-    return str_copy(out, outsz, tmp);
-}
-
-/*
- * remote_stat - find out whether a remote path exists and whether it is a
- *               directory, by opening it read-only and closing it again.
- *               Used instead of libdsm's smb_fstat(): in libdsm 0.4.3 that
- *               call sends a TRANS2 byte count that is 3 bytes short, which
- *               strict SMB1 servers (e.g. impacket's) answer by dropping the
- *               connection. Open/close uses only calls that are known good.
- * Inputs : c = context (session and tid), path = canonical remote path from
- *          resolve_path ("" = share root, which always counts as a directory)
- *          isdir = result flag, size = result size or NULL if not wanted
- * Outputs: DSM_SUCCESS with *isdir (0/1) and *size filled in, otherwise the
- *          DSM_* code from smb_fopen (e.g. DSM_ERROR_NT, status not found)
- * Clobbers: *isdir, *size; opens and closes one remote handle
- */
-static int remote_stat(Ctx *c, const char *path, int *isdir, uint64_t *size)
-{
-    smb_fd fd = 0;
-    smb_stat st;
-    int rc;
-
-    *isdir = 1;
-    if (size != NULL)
-        *size = 0;
-    if (path[0] == '\0')
-        return DSM_SUCCESS;
-    rc = smb_fopen(c->sess, c->tid, path, SMB_MOD_READ, &fd);
-    if (rc != DSM_SUCCESS)
-        return rc;
-    st = smb_stat_fd(c->sess, fd);      /* session-owned record, not copied */
-    if (st == NULL) {
-        smb_fclose(c->sess, fd);
-        return DSM_ERROR_GENERIC;
-    }
-    *isdir = smb_stat_get(st, SMB_STAT_ISDIR) != 0;
-    if (size != NULL)
-        *size = smb_stat_get(st, SMB_STAT_SIZE);
-    smb_fclose(c->sess, fd);
-    return DSM_SUCCESS;
-}
+/* parse_ipv4, nt_text, report_rc/report_fail (now eng_strerror/            */
+/* eng_strerror_fail) and resolve_path/remote_stat moved to smb_engine.c.   */
 
 /*
  * need_share - check that a share is selected, else print a hint
@@ -603,31 +272,24 @@ static void cmd_help(void)
  * cmd_shares - list the shares offered by the server
  * Inputs : c = context with a logged-in session
  * Outputs: 0 on success, -1 on failure; share names on stdout
- * Clobbers: stdout, stderr; opens (and leaves open) an IPC$ tree on the server
+ * Clobbers: stdout, stderr
  */
 static int cmd_shares(Ctx *c)
 {
-    smb_share_list list = NULL;
-    size_t count = 0, i;
-    const char *name;
-    int rc;
+    EngShareList list;
+    char errbuf[ENG_ERRLEN];
+    size_t i;
 
-    rc = smb_share_get_list(c->sess, &list, &count);
-    if (rc != DSM_SUCCESS || list == NULL) {
-        if (rc == DSM_SUCCESS)
-            rc = DSM_ERROR_GENERIC;
-        report_rc("cannot list shares", rc, c->sess);
+    if (eng_list_shares(c, &list, errbuf, sizeof errbuf) != 0) {
+        fprintf(stderr, "Error: %s\n", errbuf);
         return -1;
     }
     printf("Shares on %s:\n", c->server);
-    for (i = 0; i < count; i++) {
-        name = smb_share_list_at(list, i);
-        if (name != NULL)
-            printf("  %s\n", name);
-    }
-    if (count == 0)
+    for (i = 0; i < list.count; i++)
+        printf("  %s\n", list.names[i]);
+    if (list.count == 0)
         puts("  (none)");
-    smb_share_list_destroy(list);
+    eng_free_shares(&list);
     return 0;
 }
 
@@ -642,71 +304,40 @@ static int cmd_shares(Ctx *c)
  */
 static int cmd_use(Ctx *c, int argc, char **argv)
 {
-    smb_tid tid = 0;
-    int rc;
+    char errbuf[ENG_ERRLEN];
 
     if (argc != 2) {
         fprintf(stderr, "Usage: use <share>\n");
         return -1;
     }
-    if (strlen(argv[1]) >= SHARE_LEN) {
-        fprintf(stderr, "Error: share name too long\n");
+    if (eng_use_share(c, argv[1], errbuf, sizeof errbuf) != 0) {
+        fprintf(stderr, "Error: %s\n", errbuf);
         return -1;
     }
-    rc = smb_tree_connect(c->sess, argv[1], &tid);
-    if (rc != DSM_SUCCESS) {
-        report_rc("cannot connect to share", rc, c->sess);
-        return -1;
-    }
-    c->tid = tid;
-    c->have_share = 1;
-    str_copy(c->share, sizeof c->share, argv[1]);
-    c->cwd[0] = '\0';
     printf("Connected to \\\\%s\\%s\n", c->server, c->share);
     return 0;
 }
 
+/* cmp_entries (the directories-first, case-insensitive sort) moved into    */
+/* smb_engine.c's eng_list_dir().                                          */
+
 /*
- * find_flags - quality flags of the last directory listing (bundled libdsm
- *              only; a stock libdsm has no such call, so 0 is returned)
+ * print_find_notes - tell the person when the listing just shown may be
+ *                    incomplete or had to be recovered (see eng_find_flags)
  * Inputs : c = context
- * Outputs: bit mask of FIND_FLAG_INCOMPLETE / FIND_FLAG_RESYNCED, 0 = clean
- * Clobbers: none
+ * Outputs: none
+ * Clobbers: stderr
  */
-#ifdef SMB_FIND_INCOMPLETE
-#define FIND_FLAG_INCOMPLETE SMB_FIND_INCOMPLETE
-#define FIND_FLAG_RESYNCED   SMB_FIND_RESYNCED
-static unsigned long find_flags(const Ctx *c)
+static void print_find_notes(const Ctx *c)
 {
-    return (unsigned long)smb_session_get_find_flags(c->sess);
-}
-#else
-#define FIND_FLAG_INCOMPLETE 0x01UL
-#define FIND_FLAG_RESYNCED   0x02UL
-static unsigned long find_flags(const Ctx *c)
-{
-    (void)c;
-    return 0;
-}
-#endif
+    unsigned long f = eng_find_flags(c);
 
-/*
- * cmp_entries - qsort comparator: directories first, then name (ASCII,
- *               case-insensitive)
- * Inputs : a, b = pointers to smb_stat elements
- * Outputs: <0, 0, >0
- * Clobbers: none
- */
-static int cmp_entries(const void *a, const void *b)
-{
-    smb_stat x = *(const smb_stat *)a;
-    smb_stat y = *(const smb_stat *)b;
-    int dx = smb_stat_get(x, SMB_STAT_ISDIR) != 0;
-    int dy = smb_stat_get(y, SMB_STAT_ISDIR) != 0;
-
-    if (dx != dy)
-        return dy - dx;
-    return ci_cmp(smb_stat_name(x), smb_stat_name(y));
+    if (f & ENG_FIND_INCOMPLETE)
+        fprintf(stderr, "Warning: the listing may be incomplete (the server sent a "
+                        "malformed or cut-short reply)\n");
+    else if (f & ENG_FIND_RESYNCED)
+        fprintf(stderr, "Note: the server mis-sized its directory entries; the "
+                        "listing was recovered\n");
 }
 
 /*
@@ -718,15 +349,13 @@ static int cmp_entries(const void *a, const void *b)
  */
 static int cmd_ls(Ctx *c, int argc, char **argv)
 {
-    char path[PATH_LEN], pat[PATH_LEN];
     char tbuf[24], sbuf[24], sbuf2[24];
-    smb_stat_list list;
-    smb_stat *arr, e;
-    size_t n, i, k, plen;
+    char errbuf[ENG_ERRLEN];
+    EngEntry *arr;
+    size_t i, k;
     unsigned long ndirs = 0, nfiles = 0;
     uint64_t total = 0;
-    const char *arg, *name;
-    int isdir, rc;
+    const char *arg;
 
     if (!need_share(c))
         return -1;
@@ -735,92 +364,34 @@ static int cmd_ls(Ctx *c, int argc, char **argv)
         return -1;
     }
     arg = (argc == 2) ? argv[1] : ".";
-    if (resolve_path(c, arg, path, sizeof path) != 0) {
-        fprintf(stderr, "Error: path too long\n");
+
+    if (eng_list_dir(c, arg, &arr, &k, errbuf, sizeof errbuf) != 0) {
+        fprintf(stderr, "Error: %s\n", errbuf);
         return -1;
     }
-
-    if (strpbrk(arg, "*?") != NULL) {
-        if (str_copy(pat, sizeof pat, path) != 0) {
-            fprintf(stderr, "Error: path too long\n");
-            return -1;
-        }
-    } else {
-        rc = remote_stat(c, path, &isdir, NULL);
-        if (rc != DSM_SUCCESS) {
-            report_rc("cannot access remote path", rc, c->sess);
-            return -1;
-        }
-        plen = strlen(path);
-        if (isdir) {
-            if (plen + 3 > sizeof pat) {
-                fprintf(stderr, "Error: path too long\n");
-                return -1;
-            }
-            memcpy(pat, path, plen);
-            pat[plen] = '\\';
-            pat[plen + 1] = '*';
-            pat[plen + 2] = '\0';
-        } else if (str_copy(pat, sizeof pat, path) != 0) {
-            fprintf(stderr, "Error: path too long\n");
-            return -1;
-        }
-    }
-
-    list = smb_find(c->sess, c->tid, pat);
-    if (list == NULL) {
-        if (smb_session_get_nt_status(c->sess) != 0)
-            report_fail("listing failed", c->sess);
-        else if (find_flags(c) & FIND_FLAG_INCOMPLETE)
-            fprintf(stderr, "Error: listing failed: malformed or cut-short server reply\n");
-        else
-            puts("No entries.");
+    if (k == 0) {
+        puts("No entries.");
+        print_find_notes(c);
         return 0;
     }
 
-    n = smb_stat_list_count(list);
-    arr = (smb_stat *)malloc((n ? n : 1) * sizeof *arr);
-    if (arr == NULL) {
-        fprintf(stderr, "Error: out of memory\n");
-        smb_stat_list_destroy(list);
-        return -1;
-    }
-    k = 0;
-    for (e = list; e != NULL && k < n; e = smb_stat_list_next(e)) {
-        name = smb_stat_name(e);
-        if (name == NULL || strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
-            continue;
-        arr[k++] = e;
-    }
-    qsort(arr, k, sizeof *arr, cmp_entries);
-
     for (i = 0; i < k; i++) {
-        e = arr[i];
-        ft_str(smb_stat_get(e, SMB_STAT_WTIME), tbuf);
-        if (smb_stat_get(e, SMB_STAT_ISDIR)) {
+        ft_str(arr[i].wtime, tbuf);
+        if (arr[i].isdir) {
             strcpy(sbuf, "<DIR>");
             ndirs++;
         } else {
-            u64_str(sbuf, smb_stat_get(e, SMB_STAT_SIZE));
-            total += smb_stat_get(e, SMB_STAT_SIZE);
+            u64_str(sbuf, arr[i].size);
+            total += arr[i].size;
             nfiles++;
         }
-        printf("%s  %12s  %s\n", tbuf, sbuf, smb_stat_name(e));
+        printf("%s  %12s  %s\n", tbuf, sbuf, arr[i].name);
     }
-    if (k == 0)
-        puts("No entries.");
-    else
-        printf("%lu file(s), %lu dir(s), %s bytes\n", nfiles, ndirs,
-               u64_str(sbuf2, total));
-    if (find_flags(c) & FIND_FLAG_INCOMPLETE)
-        fprintf(stderr, "Warning: the listing may be incomplete (the server sent a "
-                        "malformed or cut-short reply)\n");
-    else if (find_flags(c) & FIND_FLAG_RESYNCED)
-        fprintf(stderr, "Note: the server mis-sized its directory entries; the "
-                        "listing was recovered\n");
+    printf("%lu file(s), %lu dir(s), %s bytes\n", nfiles, ndirs,
+           u64_str(sbuf2, total));
+    print_find_notes(c);
 
-    free(arr);
-    smb_stat_list_destroy(list);
+    eng_free_entries(arr, k);
     return 0;
 }
 
@@ -833,8 +404,7 @@ static int cmd_ls(Ctx *c, int argc, char **argv)
  */
 static int cmd_cd(Ctx *c, int argc, char **argv)
 {
-    char path[PATH_LEN];
-    int isdir, rc;
+    char errbuf[ENG_ERRLEN];
 
     if (!need_share(c))
         return -1;
@@ -846,20 +416,10 @@ static int cmd_cd(Ctx *c, int argc, char **argv)
         fprintf(stderr, "Usage: cd <dir>\n");
         return -1;
     }
-    if (resolve_path(c, argv[1], path, sizeof path) != 0) {
-        fprintf(stderr, "Error: path too long\n");
+    if (eng_cd(c, argv[1], errbuf, sizeof errbuf) != 0) {
+        fprintf(stderr, "Error: %s\n", errbuf);
         return -1;
     }
-    rc = remote_stat(c, path, &isdir, NULL);
-    if (rc != DSM_SUCCESS) {
-        report_rc("cannot access remote path", rc, c->sess);
-        return -1;
-    }
-    if (!isdir) {
-        fprintf(stderr, "Error: not a directory\n");
-        return -1;
-    }
-    str_copy(c->cwd, sizeof c->cwd, path);
     return 0;
 }
 
@@ -922,27 +482,30 @@ static void print_summary(const char *verb, uint64_t done, time_t t0)
  * Clobbers: creates/overwrites the local file (partial file left on failure);
  *          stdout, stderr; allocates and frees a chunk buffer
  */
+/*
+ * cli_xfer_progress - eng_xfer_cb that redraws the CLI's progress line
+ * Inputs : done, total; user = unused
+ * Outputs: line on stdout (see show_progress)
+ * Clobbers: stdout
+ */
+static void cli_xfer_progress(uint64_t done, uint64_t total, void *user)
+{
+    (void)user;
+    show_progress(done, total);
+}
+
 static int cmd_get(Ctx *c, int argc, char **argv)
 {
-    char path[PATH_LEN];
+    char errbuf[ENG_ERRLEN];
     const char *local;
-    unsigned char *buf = NULL;
-    FILE *out = NULL;
-    smb_fd fd = 0;
-    smb_stat st;
-    uint64_t size, done = 0, shown = 0;
-    ssize_t n;
+    uint64_t done = 0;
     time_t t0;
-    int rc, ret = -1;
+    int rc;
 
     if (!need_share(c))
         return -1;
     if (argc < 2 || argc > 3) {
         fprintf(stderr, "Usage: get <remote> [local]\n");
-        return -1;
-    }
-    if (resolve_path(c, argv[1], path, sizeof path) != 0 || path[0] == '\0') {
-        fprintf(stderr, "Error: invalid remote path\n");
         return -1;
     }
     local = (argc == 3) ? argv[2] : base_name(argv[1]);
@@ -951,77 +514,17 @@ static int cmd_get(Ctx *c, int argc, char **argv)
         return -1;
     }
 
-    rc = smb_fopen(c->sess, c->tid, path, SMB_MOD_RO, &fd);
-    if (rc != DSM_SUCCESS) {
-        report_rc("cannot open remote file", rc, c->sess);
+    t0 = time(NULL);
+    rc = eng_get_file(c, argv[1], local, cli_xfer_progress, NULL, NULL,
+                       &done, errbuf, sizeof errbuf);
+    if (rc != 0) {
+        if (rc == -2)                   /* failed after the transfer started */
+            puts("");
+        fprintf(stderr, "Error: %s\n", errbuf);
         return -1;
     }
-    st = smb_stat_fd(c->sess, fd);
-    if (st == NULL) {
-        fprintf(stderr, "Error: cannot get remote file information\n");
-        goto done;
-    }
-    if (smb_stat_get(st, SMB_STAT_ISDIR)) {
-        fprintf(stderr, "Error: remote path is a directory\n");
-        goto done;
-    }
-    size = smb_stat_get(st, SMB_STAT_SIZE);
-
-    buf = (unsigned char *)malloc(c->chunk);
-    if (buf == NULL) {
-        fprintf(stderr, "Error: out of memory\n");
-        goto done;
-    }
-    out = fopen(local, "wb");
-    if (out == NULL) {
-        fprintf(stderr, "Error: cannot create local file '%s'\n", local);
-        goto done;
-    }
-
-    t0 = time(NULL);
-    while (done < size) {
-        n = smb_fread(c->sess, fd, buf, c->chunk);
-        if (n < 0) {
-            puts("");
-            report_fail("read failed (partial local file left)", c->sess);
-            goto done;
-        }
-        if (n == 0)
-            break;
-        if (fwrite(buf, 1, (size_t)n, out) != (size_t)n) {
-            puts("");
-            fprintf(stderr, "Error: write to '%s' failed (disk full?)\n", local);
-            goto done;
-        }
-        done += (uint64_t)n;
-        if (done - shown >= PROGRESS_STEP) {
-            show_progress(done, size);
-            shown = done;
-        }
-    }
-    if (fclose(out) != 0) {
-        out = NULL;
-        puts("");
-        fprintf(stderr, "Error: closing '%s' failed\n", local);
-        goto done;
-    }
-    out = NULL;
-    if (done != size) {
-        puts("");
-        fprintf(stderr, "Warning: server ended the file early (%lu of %lu bytes)\n",
-                (unsigned long)done, (unsigned long)size);
-        goto done;
-    }
     print_summary("Downloaded", done, t0);
-    ret = 0;
-
-done:
-    if (out != NULL)
-        fclose(out);
-    if (fd != 0)
-        smb_fclose(c->sess, fd);
-    free(buf);
-    return ret;
+    return 0;
 }
 
 /*
@@ -1036,26 +539,7 @@ done:
  *          back (a warning is printed); -1 if the sizes differ (error printed)
  * Clobbers: stdout (line break), stderr; opens and closes one remote handle
  */
-static int verify_upload(Ctx *c, const char *full, uint64_t sent)
-{
-    char a[24], b[24];
-    uint64_t rsize = 0;
-    int isdir = 0;
-
-    if (remote_stat(c, full, &isdir, &rsize) != DSM_SUCCESS) {
-        puts("");
-        fprintf(stderr, "Warning: upload not verified: cannot read back the remote size\n");
-        return 0;
-    }
-    if (rsize == sent)
-        return 0;
-    puts("");
-    fprintf(stderr, "Error: upload failed verification: sent %s bytes, server holds %s "
-                    "(truncated remote file left)\n", u64_str(a, sent), u64_str(b, rsize));
-    fprintf(stderr, "       Likely cause: unpatched libdsm write byte count; "
-                    "see libdsm-write-bytecount.patch and README.md\n");
-    return -1;
-}
+/* verify_upload moved into smb_engine.c (part of eng_put_file).            */
 
 /*
  * cmd_put - upload one local file (creates or overwrites the remote file)
@@ -1064,21 +548,15 @@ static int verify_upload(Ctx *c, const char *full, uint64_t sent)
  *          is appended (default: local base name in the remote cwd)
  * Outputs: 0 on success, -1 on failure
  * Clobbers: creates/overwrites the remote file (partial file left on failure);
- *          stdout, stderr; allocates and frees a chunk buffer
+ *          stdout, stderr
  */
 static int cmd_put(Ctx *c, int argc, char **argv)
 {
-    char path[PATH_LEN], full[PATH_LEN];
+    char errbuf[ENG_ERRLEN];
     const char *remote_arg, *lname;
-    unsigned char *buf = NULL;
-    FILE *in = NULL;
-    smb_fd fd = 0;
-    uint64_t total = 0, done = 0, shown = 0;
-    size_t got, off, plen;
-    ssize_t w;
-    long flen;
+    uint64_t done = 0;
     time_t t0;
-    int rc, isdir, ret = -1;
+    int rc;
 
     if (!need_share(c))
         return -1;
@@ -1092,95 +570,22 @@ static int cmd_put(Ctx *c, int argc, char **argv)
         return -1;
     }
     remote_arg = (argc == 3) ? argv[2] : lname;
-    if (resolve_path(c, remote_arg, path, sizeof path) != 0) {
-        fprintf(stderr, "Error: remote path too long\n");
-        return -1;
-    }
-
-    /* an existing remote directory (or the share root) as target: append name */
-    if (remote_stat(c, path, &isdir, NULL) != DSM_SUCCESS)
-        isdir = 0;                      /* does not exist yet: plain new file */
-    if (isdir) {
-        plen = strlen(path);
-        if (plen + 1 + strlen(lname) + 1 > sizeof full) {
-            fprintf(stderr, "Error: remote path too long\n");
-            return -1;
-        }
-        memcpy(full, path, plen);
-        full[plen] = '\\';
-        strcpy(full + plen + 1, lname);
-    } else if (str_copy(full, sizeof full, path) != 0) {
-        fprintf(stderr, "Error: remote path too long\n");
-        return -1;
-    }
-
-    in = fopen(argv[1], "rb");
-    if (in == NULL) {
-        fprintf(stderr, "Error: cannot open local file '%s'\n", argv[1]);
-        return -1;
-    }
-    if (fseek(in, 0, SEEK_END) == 0) {
-        flen = ftell(in);
-        if (flen > 0)
-            total = (uint64_t)flen;
-    }
-    if (fseek(in, 0, SEEK_SET) != 0) {
-        fprintf(stderr, "Error: cannot read local file '%s'\n", argv[1]);
-        goto done;
-    }
-    buf = (unsigned char *)malloc(c->chunk);
-    if (buf == NULL) {
-        fprintf(stderr, "Error: out of memory\n");
-        goto done;
-    }
-
-    rc = smb_fopen(c->sess, c->tid, full, SMB_MOD_RW, &fd);
-    if (rc != DSM_SUCCESS) {
-        report_rc("cannot create remote file", rc, c->sess);
-        goto done;
-    }
 
     t0 = time(NULL);
-    for (;;) {
-        got = fread(buf, 1, c->chunk, in);
-        if (got == 0) {
-            if (ferror(in)) {
-                puts("");
-                fprintf(stderr, "Error: read from '%s' failed\n", argv[1]);
-                goto done;
-            }
-            break;
-        }
-        off = 0;
-        while (off < got) {
-            w = smb_fwrite(c->sess, fd, buf + off, got - off);
-            if (w <= 0) {
-                puts("");
-                report_fail("write failed (partial remote file left)", c->sess);
-                goto done;
-            }
-            off += (size_t)w;
-        }
-        done += (uint64_t)got;
-        if (done - shown >= PROGRESS_STEP) {
-            show_progress(done, total);
-            shown = done;
-        }
+    rc = eng_put_file(c, argv[1], remote_arg, cli_xfer_progress, NULL, NULL,
+                       &done, errbuf, sizeof errbuf);
+    if (rc < 0) {
+        if (rc == -2)                   /* failed after the transfer started */
+            puts("");
+        fprintf(stderr, "Error: %s\n", errbuf);
+        return -1;
     }
-    smb_fclose(c->sess, fd);            /* close before the read-back check */
-    fd = 0;
-    if (verify_upload(c, full, done) != 0)
-        goto done;
+    if (rc == 1) {                      /* uploaded, but could not verify */
+        puts("");
+        fprintf(stderr, "Warning: %s\n", errbuf);
+    }
     print_summary("Uploaded", done, t0);
-    ret = 0;
-
-done:
-    if (fd != 0)
-        smb_fclose(c->sess, fd);
-    if (in != NULL)
-        fclose(in);
-    free(buf);
-    return ret;
+    return 0;
 }
 
 /*
@@ -2009,54 +1414,27 @@ static void usage(const char *exe)
     fprintf(stderr, "         %s -S 192.168.4.0/24\n", exe);
 }
 
+/* connect_server moved into smb_engine.c as eng_connect(); main() drives it */
+/* with the callback below so the printed trace is unchanged.               */
+
 /*
- * connect_server - open an SMB1 session using the requested transport(s)
- * Inputs : ip = server address (network byte order), ip_text = same as text,
- *          mode = 0 auto (tcp then nbt), 1 tcp, 2 nbt,
- *          nbname = NetBIOS name or NULL for the defaults
- * Outputs: new connected (not yet logged in) session, or NULL if every attempt
- *          failed; progress and reasons on stderr
- * Clobbers: stdout, stderr. Each attempt uses a fresh session
+ * connect_notify - eng_notify_cb that reproduces smbftp 0.5's connect trace
+ * Inputs : line = message text (no newline/prefix), is_error = 0 for a
+ *          progress line (smbftp 0.5 printed it to stdout), 1 for a failed
+ *          attempt (smbftp 0.5 printed it to stderr as "Error: <line>");
+ *          user = unused
+ * Outputs: line on stdout or stderr
+ * Clobbers: stdout or stderr
  */
-static smb_session *connect_server(uint32_t ip, const char *ip_text, int mode,
-                                   const char *nbname)
+static void connect_notify(const char *line, int is_error, void *user)
 {
-    static const int order_auto[2] = { SMB_TRANSPORT_TCP, SMB_TRANSPORT_NBT };
-    int attempt[2];
-    int natt, i, rc;
-    smb_session *s;
-    const char *name, *tname;
-
-    if (mode == 1) {
-        attempt[0] = SMB_TRANSPORT_TCP;
-        natt = 1;
-    } else if (mode == 2) {
-        attempt[0] = SMB_TRANSPORT_NBT;
-        natt = 1;
+    (void)user;
+    if (is_error) {
+        fprintf(stderr, "Error: %s\n", line);
     } else {
-        attempt[0] = order_auto[0];
-        attempt[1] = order_auto[1];
-        natt = 2;
-    }
-
-    for (i = 0; i < natt; i++) {
-        tname = (attempt[i] == SMB_TRANSPORT_TCP) ? "direct TCP (445)" : "NetBIOS (139)";
-        name = (nbname != NULL) ? nbname
-             : (attempt[i] == SMB_TRANSPORT_TCP ? ip_text : "*SMBSERVER");
-        printf("Connecting to %s using SMB1 over %s...\n", ip_text, tname);
+        puts(line);
         fflush(stdout);
-        s = smb_session_new();
-        if (s == NULL) {
-            fprintf(stderr, "Error: could not allocate SMB session\n");
-            return NULL;
-        }
-        rc = smb_session_connect(s, name, ip, attempt[i]);
-        if (rc == DSM_SUCCESS)
-            return s;
-        report_rc("negotiation failed", rc, s);
-        smb_session_destroy(s);
     }
-    return NULL;
 }
 
 /*
@@ -2074,11 +1452,12 @@ int main(int argc, char **argv)
     const char *user = "guest", *pass = "", *domain = "WORKGROUP";
     const char *nbname = NULL, *init_share = NULL, *host = NULL;
     char line[LINE_LEN], prompt[SERVER_LEN + SHARE_LEN + PATH_LEN];
+    char errbuf[ENG_ERRLEN];
     char *av[MAX_ARGS];
     char *end;
     uint32_t ip;
     unsigned long chunk = DEF_CHUNK, wait_ms = DEF_WAIT_MS;
-    int mode = 0, scan = 0, i, ac, rc, guest, ret = 1;
+    int mode = 0, scan = 0, i, ac, guest, ret = 1;
     size_t ll;
 
     for (i = 1; i < argc; i++) {
@@ -2174,20 +1553,18 @@ int main(int argc, char **argv)
     ctx.chunk = chunk;
     str_copy(ctx.server, sizeof ctx.server, host);
 
-    ctx.sess = connect_server(ip, host, mode, nbname);
+    ctx.sess = eng_connect(ip, host, mode, nbname, connect_notify, NULL,
+                            errbuf, sizeof errbuf);
     if (ctx.sess == NULL) {
         fprintf(stderr, "Error: could not establish an SMB1 session with %s.\n", host);
         goto finish;
     }
 
-    smb_session_set_creds(ctx.sess, domain, user, pass);
-    rc = smb_session_login(ctx.sess);
-    if (rc != DSM_SUCCESS) {
-        report_rc("login failed", rc, ctx.sess);
+    if (eng_login(&ctx, domain, user, pass, &guest, errbuf, sizeof errbuf) != 0) {
+        fprintf(stderr, "Error: %s\n", errbuf);
         fprintf(stderr, "Hint: try -u, -p and -d (the default is user 'guest', empty password).\n");
         goto finish;
     }
-    guest = smb_session_is_guest(ctx.sess);
     printf("Logged in as %s\\%s%s.\n", domain, user, guest == 1 ? " (mapped to guest by server)" : "");
     puts("Type 'help' for commands.");
 
@@ -2258,8 +1635,7 @@ int main(int argc, char **argv)
     }
 
 finish:
-    if (ctx.sess != NULL)
-        smb_session_destroy(ctx.sess);
+    eng_disconnect(&ctx);               /* SMB logoff if logged in, then close */
 #ifdef _WIN32
     WSACleanup();
 #endif
