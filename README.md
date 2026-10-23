@@ -118,9 +118,6 @@ Layout, all next to `build.cmd`:
     linux\     config.h for libdsm on Linux (used by the Makefile and tests\)
     patches\   libdsm.cfg (commit, URL, SHA-256, patch order) and the patch series
     tools\     applydiff.c, the patch tool
-    tests\     test tools (below)
-    archive\   earlier versions of changed files, the pre-merge bundled libdsm and its old
-               patches, test notes (REGRESSION.md); not needed to build
     libdsm\    made by the build: upstream libdsm plus the patches. Not committed.
     deps\      download cache and the compiled patch tool. Not committed.
 
@@ -169,18 +166,12 @@ hosts. This machine's own addresses are not probed. Only guest login is tried.
 exe while it runs, and the same lines go to `OutputDebugStringA` for a debugger or
 DebugView.
 
-There is no automated test for the GUI exe (it blocks on its message loop): run it and
-check that the window opens, resizes cleanly and closes. `archive\REGRESSION.md` records how
-earlier phases were checked under Wine, and how the engine's scan calls were exercised on
-Linux against impacket (`archive\scan-harness\`).
-
 ## Building on Linux
 
     make                   release build -> ./smbftp
     make DEBUG=1           -g -O0, libdsm's debug trace and asserts on
     make asan              AddressSanitizer + UBSan build -> ./smbftp-asan
     make fetch             only download, verify and patch libdsm
-    make test              tests/test_applydiff.sh, then a smoke test of ./smbftp
     make clean             remove build objects and the binaries
     make distclean         clean, and delete libdsm/ and the download cache deps/
 
@@ -227,52 +218,6 @@ The two patch files are against upstream libdsm commit `0f3edc6` (master of
 
 `meson.build` and `config.h.meson` are left as they were and are not used (the
 meson build would still ask for libtasn1).
-
-## Tests
-
-The tools are in `tests/` (Linux, Python 3, gcc, Samba, impacket; see the header of
-each file). They build smbftp with ASan/UBSan, run it against a Samba server
-(SMB1 only) and impacket's strict SMB1 server, and compare every listing with the
-files on disk. `tests/run_all.sh <project folder>` runs the whole matrix and runs
-`make fetch` first if `libdsm/` is not there yet. `tests/test_applydiff.sh` tests the
-patch tool on its own (random `diff -u` pairs, refusals, `\ No newline` cases) and
-needs no server; `make test` runs it.
-
-| Test | smbftp 0.5 | smbftp 0.6 |
-|------|------------|------------|
-| Black-box suite (285 tests: listings of 0..5000 files, long and varied names, Unicode, `cd`/`ls` repeats, transfers 0 B..10 MB), Samba, ASan | 9 failed | 0 failed |
-| same, impacket | 39 failed (a listing stops at about 500 entries; wrong counts) | 0 failed |
-| same, plain (no ASan) build | not run | 0 failed on both servers |
-| Windows branch of `smb_utils.c` on a Linux shim, plain build, `d_varlen` (600 names, 1..200 chars) | aborts: glibc "malloc(): invalid next size" | passes |
-| Windows branch, UTF-8 code page, ASan, Samba (all) and impacket (listings) | n/a | 0 failed |
-| Reply-mutation fuzz (a proxy corrupts server replies), ASan | 100 seeds: 32 sanitizer reports (heap overflows, huge allocations), 1 abort | 690 seeds (Samba, impacket, Windows branch, 30% and 80% mutation): 0 reports |
-| Replies delivered 1..500 bytes at a time, with delay | n/a | listing and download exact |
-| Connection dropped at 14 points of a listing | n/a | clean exit, partial listing flagged, no wrong or duplicate names, next run works |
-| valgrind with leak check (`use`, `ls` x3, `get`, `shares`) | n/a | no errors, no leaks |
-
-The merged tree (smbftp 0.8, smb_engine 1.5) was checked the same way: built with
-`tests/build_linux.sh` against the downloaded, patched libdsm, the 285-test black-box suite
-against impacket gave 0 failed on the plain build and 0 failed on the ASan/UBSan build.
-`make test` (353 patch-tool checks and the smoke test) passes. `tests/test_applydiff.sh` and
-the other scripts need the executable bit or an explicit `bash`/`sh`; `make test` uses
-`bash`. The Samba half of `tests/run_all.sh`, valgrind, and the fuzz/fault scripts were not
-re-run on the merged tree.
-
-The table above was measured on the libdsm tree that used to be shipped. The
-download-and-patch build produces a byte-identical tree (checked against the old
-one), and the 285-test black-box suite was run again on a binary built by the
-`Makefile` against impacket: 0 failed.
-
-Remaining differences, none a defect in smbftp: the Windows-branch shim used for the
-ANSI code page converts to Latin-1, so four Unicode listing checks that expect UTF-8
-differ in the shim (counts are right; the UTF-8 shim build passes them). A stalled
-server ends a request after 60 s, which the fuzzer's short time limit (5-15 s) reports as "hang".
-
-Not tested: a real Windows machine and a real Windows SMB1 server (no Windows here;
-the TCC build was only syntax-checked with TCC on Linux). The reported
-"out of memory" message could not be reproduced as such; it is the likeliest
-result of the heap overflow above (a failing `malloc` after heap corruption), but
-that link is inferred, not observed.
 
 ## libdsm write byte count (needed for strict servers)
 
