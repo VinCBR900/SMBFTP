@@ -10,6 +10,10 @@ which both use. Version, usage and history are in the header of each source file
 > **AI Disclosure**: The coding heavy lifting was done by Claude AI (Anthropic).  I architected, reviewed, and shepherded Claude.
 > To be frank, without Claude this tool would not have been possible.
 
+**NOTE**: Command line Passwords are plan text - this is not a security project and was just meant as a quick hack to acces an old NAS on Windows machines without SMB1 enabled. 
+
+After I built this I discovered the NAS offered FTP server, so should have just RTFM.
+
 ## Usage
 
     smbftp [options] <IPv4-address>
@@ -20,8 +24,6 @@ Default login is `guest` with an empty password (libdsm cannot send a true null
 session). Commands: `shares`, `use <share>`, `ls`, `cd`, `pwd`, `get`, `put`,
 `lcd`, `lpwd`, `help`, `quit`. Run `smbftp -h` for all options. `quit` (and end of input) logs
 off from the server and closes the connection.
-
-**NOTE**: Command line Passwords are plan text - this is not a security project and was just meant as a quick hack to acces an old NAS on Windows machines without SMB1 enabled.
 
 ## Finding servers (scan mode)
 
